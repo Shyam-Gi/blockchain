@@ -21,6 +21,7 @@ package main
 
 import (
 	"bytes"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -56,12 +57,17 @@ func main() {
 	fmt.Printf("Verify worked? %v\n", worked)
 
 	// Forge signature
-	msgString, sig, err := Forge()
-	if err != nil {
-		panic(err)
-	}
+	// msgString, sig, err := Forge()
+	// if err != nil {
+	// 	panic(err)
+	// }
 
-	fmt.Printf("forged msg: %s sig: %s\n", msgString, sig.ToHex())
+	// fmt.Printf("forged msg: %s sig: %s\n", msgString, sig.ToHex())
+
+	tamperedMessage := "Hello, Fake!"
+	m = GetMessageFromString(tamperedMessage)
+	worked = Verify(m, pub, sig1)
+	fmt.Printf("Tampered Message : Verify worked? %v\n", worked)
 
 	return
 }
@@ -220,32 +226,55 @@ func GenerateKey() (SecretKey, PublicKey, error) {
 	var sec SecretKey
 	var pub PublicKey
 
-	// Your code here
-	// ===
+	for i := 0; i < len(sec.ZeroPre); i++ {
+		num1 := make([]byte, 32)
+		num2 := make([]byte, 32)
+		rand.Read(num1)
+		rand.Read(num2)
+		sec.ZeroPre[i] = Block(num1)
+		sec.OnePre[i] = Block(num2)
+		pub.ZeroHash[i] = Block(sha256.Sum256(num1))
+		pub.OneHash[i] = Block(sha256.Sum256(num2))
 
-	// ===
+	}
+
 	return sec, pub, nil
 }
 
 // Sign takes a message and secret key, and returns a signature.
 func Sign(msg Message, sec SecretKey) Signature {
 	var sig Signature
+	messageHash := sha256.Sum256([]byte(msg[:]))
+	for i, byteVal := range messageHash {
+		for j := 0; j < 8; j++ {
+			if (byteVal & (1 << (7 - j))) == 0 {
+				sig.Preimage[i*8+j] = sec.ZeroPre[i*8+j]
 
-	// Your code here
-	// ===
-
-	// ===
+			} else {
+				sig.Preimage[i*8+j] = sec.OnePre[i*8+j]
+			}
+		}
+	}
 	return sig
 }
 
 // Verify takes a message, public key and signature, and returns a boolean
 // describing the validity of the signature.
 func Verify(msg Message, pub PublicKey, sig Signature) bool {
+	messageHash := sha256.Sum256([]byte(msg[:]))
 
-	// Your code here
-	// ===
+	for i := 0; i < 256; i++ {
+		bit := messageHash[i/8] & (1 << (7 - uint(i%8))) // Get the ith bit of the hash
 
-	// ===
+		// Hash the signature piece
+		hash := sha256.Sum256([]byte(sig.Preimage[i][:]))
 
+		// Compare with the corresponding public key
+		if bit == 0 && (pub.ZeroHash[i] != Block(hash[:])) {
+			return false
+		} else if bit != 0 && (pub.OneHash[i] != Block(hash[:])) {
+			return false
+		}
+	}
 	return true
 }
